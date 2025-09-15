@@ -74,12 +74,8 @@ def create_digest(messages): #создание списка новостей
 
     for msg in messages:
         text = msg['text']
-
-        # Получаем анализ от AI
         analysis = classify_news(text)
-
         message_link = f"https://t.me/c/{channel_id_short}/1/{msg['message_id']}"
-
         digest_lines.append(
             f"📰 Статья: {analysis['summary']}\n"
             f"🏷️ Тип инструмента: #{analysis['direction']}\n"
@@ -87,7 +83,6 @@ def create_digest(messages): #создание списка новостей
             f"✔️ Актуальность: {analysis['relevance']}\n"
             f"➡️ [Ссылка на сообщение]({message_link})\n"
         )
-
     return '\n'.join(digest_lines)
 
 def fetch_and_send_summary(): #мейн функция по постингу дайджеста
