@@ -17,16 +17,35 @@ client = OpenAI(
     api_key=token_ii
 )
 
-def clean_openai_response(text):     #Удаляем ```json ... ```
+def run_telebot_with_reconnect(): # реконект и ошибки, возможно работает с ошибками
+    while True:
+        try:
+            bot.send_message(CHANNEL_ID, "🚀*Автодайджест успешно запущен!* 🚀", parse_mode='Markdown')
+            bot.polling(none_stop=True, skip_pending=True)
+        except Exception as e:
+            print("Ошибка: Недостаточно токенов, ", e)
+            try:
+                bot.send_message(CHANNEL_ID, "⚠️Ошибка: Недостаточно API "
+                                             "токенов для использования нейросети (лимит 50 токенов в день")
+            except Exception as send_err:
+                print("Не удалось отправить сообщение об отключении:", send_err)
+            time.sleep(10)
+
+def contains_notnews_tag(text): #проверка на тег Notnews
+    if not text:
+        return False
+    return 'Notnews' in text.lower()
+
+def clean_openai_response(text):     #удаление ``````
     if text.startswith("```") and text.endswith("```"):
         text = text[3:-3].strip()
         if text.lower().startswith("json"):
             text = text[4:].strip()
     return text
 
-def clean_old_messages():       #Очистка сообщений каждую неделю
+def clean_old_messages():       #очистка сообщений каждую неделю
     global messages
-    one_week_ago = datetime.now() - timedelta(seconds=100)
+    one_week_ago = datetime.now() - timedelta(seconds=60)
     messages = [m for m in messages if m['date'] > one_week_ago]
 
 def classify_news(text):    #промтик для нейронки
@@ -36,8 +55,8 @@ def classify_news(text):    #промтик для нейронки
         "{\n"
         "  \"summary\": \О чем эта новость, напиши кратко, не более 20 слов в формате дайджеста \n"
         "  \"level\": \"Начальный уровень, Продвинутый уровень или Профессиональный уровень\",\n"
-        "  \"direction\": \Одним словом оформи тег данной новости для удобного поиска (Датасаинс, Промптинг, Инфографика, "
-        "Кодинг) ,\n"
+        "  \"direction\": \Одним словом оформи тег данной новости для удобного поиска (Датасаинс, "
+        "Промптинг, Notnews, Инфографика, Кодинг) ,\n"
         "  \"relevance\": \Объективная оценка актуальности статьи на основе трендов направления, "
         "строго число от 1 до 10 (целое), необходим точный ответ так как от этого зависит качество обучения работников\n"
         "}\n"
@@ -45,7 +64,8 @@ def classify_news(text):    #промтик для нейронки
     )
     try:
         response = client.chat.completions.create(
-            model='deepseek/deepseek-chat-v3.1:free',
+            #model='deepseek/deepseek-chat-v3.1:free',
+            model='openai/gpt-oss-120b:free',
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             max_tokens=400
@@ -63,6 +83,7 @@ def classify_news(text):    #промтик для нейронки
         print("Ошибка при анализе новости:", e)
         print("Ответ модели:", answer)
         return {"level": "N/A", "direction": "N/A", "relevance": "N/A"}
+
 
 def create_digest(messages): #создание списка новостей
     digest_lines = []
@@ -85,18 +106,19 @@ def create_digest(messages): #создание списка новостей
         )
     return '\n'.join(digest_lines)
 
+
 def fetch_and_send_summary(): #мейн функция по постингу дайджеста
     while True:
-        time.sleep(100)
+        time.sleep(60)
         clean_old_messages()
         if not messages:
             all_news = "За прошедшую неделю сообщений с ссылками не найдено."
         else:
-            all_news = create_digest(messages)
+            all_news = "📰*Дайджест за прошедшую неделю:*\n\n" + create_digest(messages)
         bot.send_message(CHANNEL_ID, all_news, parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: True, content_types=['text', 'photo', 'video', 'document'])
-def handle_message(message): #функция для "ловли" сообщений в канале
+def handle_message(message):
     if int(message.chat.id) == int(CHANNEL_ID):
         text = message.text or message.caption or ''
 
@@ -104,6 +126,15 @@ def handle_message(message): #функция для "ловли" сообщен�
             print("Это пересланное сообщение:")
 
         if text:
+            analysis = classify_news(text)
+            combined_fields = " ".join([str(analysis.get(k, "")).lower() for k in ["summary",
+                                                                                   "direction", "level", "relevance"]])
+            print("Debug combined_fields:", combined_fields)  # Отладка
+
+            if contains_notnews_tag(combined_fields):
+                print("Пропущено сообщение с тегом #Notnews после анализа")
+                return
+
             print(f'Получено сообщение: {text}')
             messages.append({
                 'text': text,
@@ -112,7 +143,7 @@ def handle_message(message): #функция для "ловли" сообщен�
             })
 
 if __name__ == "__main__":
-    bot_thread = threading.Thread(target=bot.polling, daemon=True)
+    bot_thread = threading.Thread(target=run_telebot_with_reconnect, daemon=True)
     bot_thread.start()
 
     summary_thread = threading.Thread(target=fetch_and_send_summary, daemon=True)
