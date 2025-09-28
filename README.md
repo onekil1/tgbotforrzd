@@ -14,3 +14,4 @@
 
 
  v.0.1 - deepseek integration for create digest
+ v.0.1.1 - qol functions added
