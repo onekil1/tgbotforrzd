@@ -34,7 +34,7 @@ def run_telebot_with_reconnect(): # реконект и ошибки, возмо
 def contains_notnews_tag(text): #проверка на тег Notnews
     if not text:
         return False
-    return 'Notnews' in text.lower()
+    return 'notnews' in text.lower()
 
 def clean_openai_response(text):     #удаление ``````
     if text.startswith("```") and text.endswith("```"):
@@ -64,8 +64,7 @@ def classify_news(text):    #промтик для нейронки
     )
     try:
         response = client.chat.completions.create(
-            #model='deepseek/deepseek-chat-v3.1:free',
-            model='openai/gpt-oss-120b:free',
+            model='deepseek/deepseek-chat-v3.1:free',
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             max_tokens=400
@@ -127,12 +126,11 @@ def handle_message(message):
 
         if text:
             analysis = classify_news(text)
-            combined_fields = " ".join([str(analysis.get(k, "")).lower() for k in ["summary",
-                                                                                   "direction", "level", "relevance"]])
-            print("Debug combined_fields:", combined_fields)  # Отладка
+            direction_norm = analysis.get("direction", "").strip().lower()
+            print("Debug direction_norm:", direction_norm)
 
-            if contains_notnews_tag(combined_fields):
-                print("Пропущено сообщение с тегом #Notnews после анализа")
+            if direction_norm == "notnews":
+                print("Пропущено сообщение, нейросеть определила направление как Notnews")
                 return
 
             print(f'Получено сообщение: {text}')
