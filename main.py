@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from config import token_bot, channel, token_ii
 from openai import OpenAI
 
+thread_id = 315
 TOKEN = token_bot
 CHANNEL_ID = channel
 bot = telebot.TeleBot(TOKEN)
@@ -20,13 +21,12 @@ client = OpenAI(
 def run_telebot_with_reconnect(): # реконект и ошибки, возможно работает с ошибками
     while True:
         try:
-            bot.send_message(CHANNEL_ID, "🚀*Автодайджест успешно запущен!* 🚀", parse_mode='Markdown')
+            #bot.send_message(CHANNEL_ID, "🚀*Автодайджест успешно запущен!* 🚀", message_thread_id=thread_id, parse_mode='Markdown')
             bot.polling(none_stop=True, skip_pending=True)
         except Exception as e:
-            print("Ошибка: Недостаточно токенов, ", e)
+            print("Ошибка", e)
             try:
-                bot.send_message(CHANNEL_ID, "⚠️Ошибка: Недостаточно API "
-                                             "токенов для использования нейросети (лимит 50 токенов в день")
+                bot.send_message(CHANNEL_ID, "⚠️Ошибка", message_thread_id=thread_id)
             except Exception as send_err:
                 print("Не удалось отправить сообщение об отключении:", send_err)
             time.sleep(10)
@@ -45,7 +45,7 @@ def clean_openai_response(text):     #удаление ``````
 
 def clean_old_messages():       #очистка сообщений каждую неделю
     global messages
-    one_week_ago = datetime.now() - timedelta(seconds=60)
+    one_week_ago = datetime.now() - timedelta(days=7)
     messages = [m for m in messages if m['date'] > one_week_ago]
 
 def classify_news(text):    #промтик для нейронки
@@ -95,7 +95,7 @@ def create_digest(messages): #создание списка новостей
     for msg in messages:
         text = msg['text']
         analysis = classify_news(text)
-        message_link = f"https://t.me/c/{channel_id_short}/1/{msg['message_id']}"
+        message_link = f"https://t.me/c/{channel_id_short}/315/{msg['message_id']}"
         digest_lines.append(
             f"📰 Статья: {analysis['summary']}\n"
             f"🏷️ Тип инструмента: #{analysis['direction']}\n"
@@ -108,22 +108,21 @@ def create_digest(messages): #создание списка новостей
 
 def fetch_and_send_summary(): #мейн функция по постингу дайджеста
     while True:
-        time.sleep(60)
+        time.sleep(604800)
         clean_old_messages()
         if not messages:
             all_news = "За прошедшую неделю сообщений с ссылками не найдено."
         else:
             all_news = "📰*Дайджест за прошедшую неделю:*\n\n" + create_digest(messages)
-        bot.send_message(CHANNEL_ID, all_news, parse_mode='Markdown')
+        bot.send_message(CHANNEL_ID, all_news, message_thread_id=thread_id, parse_mode='Markdown')
 
 @bot.message_handler(func=lambda m: True, content_types=['text', 'photo', 'video', 'document'])
 def handle_message(message):
     if int(message.chat.id) == int(CHANNEL_ID):
+        if getattr(message, 'message_thread_id', None) != thread_id:
+            return
+
         text = message.text or message.caption or ''
-
-        if message.forward_from or message.forward_from_chat:
-            print("Это пересланное сообщение:")
-
         if text:
             analysis = classify_news(text)
             direction_norm = analysis.get("direction", "").strip().lower()
